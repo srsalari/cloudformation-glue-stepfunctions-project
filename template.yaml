@@ -2,15 +2,17 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   CloudFormation Template that creates:
     • An IAM Role with permissions for AWS Glue, Step Functions, SQS, and SNS
-    • An AWS Glue Job for data processing
-    • An SQS Queue for message processing
-    • An SNS Topic for notifications
+    • An AWS Glue Job for data processing using the external script located at "s3://q3-glue-project/script.py"
+    • An SQS Queue for message processing with a unique name
+    • An SNS Topic for notifications with a unique name
     • An AWS Step Functions State Machine with a 5-step workflow
 
 Resources:
   GlueStepFunctionsRole:
     Type: AWS::IAM::Role
     Properties:
+      # Optionally supply a RoleName using !Sub to ensure uniqueness.
+      # RoleName: !Sub "GlueStepFunctionsRole-${AWS::AccountId}-${AWS::Region}"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -28,15 +30,15 @@ Resources:
               - Effect: Allow
                 Action:
                   - glue:StartJobRun
-                Resource: "*"   # In production, restrict to your Glue Job ARN
+                Resource: "*"   # For production, restrict to your Glue Job ARN
               - Effect: Allow
                 Action:
                   - sqs:SendMessage
-                Resource: "*"   # In production, restrict to your SQS Queue ARN
+                Resource: "*"   # Restrict if possible
               - Effect: Allow
                 Action:
                   - sns:Publish
-                Resource: "*"   # In production, restrict to your SNS Topic ARN
+                Resource: "*"   # Restrict if possible
 
   MyGlueJob:
     Type: AWS::Glue::Job
@@ -45,20 +47,21 @@ Resources:
       Role: !GetAtt GlueStepFunctionsRole.Arn
       Command:
         Name: "glueetl"
-        # Update this ScriptLocation with the S3 path of your Glue script.
-        ScriptLocation: "s3://your-bucket/path/to/script.py"
+        ScriptLocation: "s3://q3-glue-project/script.py"
       GlueVersion: "2.0"
       MaxCapacity: 2.0
-
+  
   MyQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: "MyQueue"
+      # Append account and region to ensure the queue name is unique.
+      QueueName: !Sub "MyQueue-${AWS::AccountId}-${AWS::Region}"
 
   MySNSTopic:
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: "MySNSTopic"
+      # Ensure the topic name is unique by appending account and region.
+      TopicName: !Sub "MySNSTopic-${AWS::AccountId}-${AWS::Region}"
 
   MyStateMachine:
     Type: AWS::StepFunctions::StateMachine
@@ -105,3 +108,17 @@ Resources:
             }
           }
         }
+
+Outputs:
+  GlueJobName:
+    Description: "Name of the AWS Glue Job."
+    Value: !Ref MyGlueJob
+  SQSQueueUrl:
+    Description: "URL of the SQS Queue."
+    Value: !Ref MyQueue
+  SNSTopicARN:
+    Description: "ARN of the SNS Topic."
+    Value: !Ref MySNSTopic
+  StateMachineARN:
+    Description: "ARN of the Step Functions State Machine."
+    Value: !Ref MyStateMachine

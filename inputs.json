@@ -1,0 +1,14 @@
+[
+    {
+      "field1": "example string 1",
+      "field2": 123
+    },
+    {
+      "field1": "example string 2",
+      "field2": 456
+    },
+    {
+      "field3": "example string 3",
+      "field4": 789
+    }
+  ]
