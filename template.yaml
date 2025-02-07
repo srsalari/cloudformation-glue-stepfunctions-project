@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CloudFormation Template that creates:
+    • An IAM Role with permissions for AWS Glue, Step Functions, SQS, and SNS
+    • An AWS Glue Job for data processing
+    • An SQS Queue for message processing
+    • An SNS Topic for notifications
+    • An AWS Step Functions State Machine with a 5-step workflow
+
+Resources:
+  GlueStepFunctionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+                - glue.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: GlueStepFunctionsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:StartJobRun
+                Resource: "*"   # In production, restrict to your Glue Job ARN
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource: "*"   # In production, restrict to your SQS Queue ARN
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: "*"   # In production, restrict to your SNS Topic ARN
+
+  MyGlueJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: "MyGlueJob"
+      Role: !GetAtt GlueStepFunctionsRole.Arn
+      Command:
+        Name: "glueetl"
+        # Update this ScriptLocation with the S3 path of your Glue script.
+        ScriptLocation: "s3://your-bucket/path/to/script.py"
+      GlueVersion: "2.0"
+      MaxCapacity: 2.0
+
+  MyQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: "MyQueue"
+
+  MySNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: "MySNSTopic"
+
+  MyStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: "MyStateMachine"
+      RoleArn: !GetAtt GlueStepFunctionsRole.Arn
+      DefinitionString: !Sub |
+        {
+          "StartAt": "Step-1: Start",
+          "States": {
+            "Step-1: Start": {
+              "Type": "Pass",
+              "Next": "Step-2: Trigger Glue Job"
+            },
+            "Step-2: Trigger Glue Job": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::glue:startJobRun.sync",
+              "Parameters": {
+                "JobName": "${MyGlueJob}"
+              },
+              "Next": "Step-3: Send SQS Message"
+            },
+            "Step-3: Send SQS Message": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sqs:sendMessage",
+              "Parameters": {
+                "QueueUrl": "${MyQueue}",
+                "MessageBody": "Trigger SQS Message"
+              },
+              "Next": "Step-4: Publish SNS Message"
+            },
+            "Step-4: Publish SNS Message": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "${MySNSTopic}",
+                "Message": "Trigger SNS Notification"
+              },
+              "Next": "Step-5: Stop"
+            },
+            "Step-5: Stop": {
+              "Type": "Pass",
+              "End": true
+            }
+          }
+        }
